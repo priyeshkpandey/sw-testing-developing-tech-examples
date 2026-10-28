@@ -1,0 +1,53 @@
+{
+  "status": "harness_failed",
+  "verdict": "I could not get a working experiment for this topic; the attempt log shows where it broke.",
+  "summary": {
+    "attempts": 3
+  },
+  "outcomes": [
+    {
+      "case": "attempt 1",
+      "verdict": "failed",
+      "evidence": "demo.py exit 1:\n  File \"/home/runner/work/sw-test-patreon-linkedin-poster/sw-test-patreon-linkedin-poster/work/demo/coverage-vs-mutation-score-llm-generated-code/demo.py\", line 1\n    ```python\n    ^\nSyntaxError: invalid syntax\n"
+    },
+    {
+      "case": "attempt 2",
+      "verdict": "failed",
+      "evidence": "demo.py exit 1:\nTraceback (most recent call last):\n  File \"/home/runner/work/sw-test-patreon-linkedin-poster/sw-test-patreon-linkedin-poster/work/demo/coverage-vs-mutation-score-llm-generated-code/demo.py\", line 403, in <module>\n    main()\n  File \"/home/runner/work/sw-test-patreon-linkedin-poster/sw"
+    },
+    {
+      "case": "attempt 3",
+      "verdict": "failed",
+      "evidence": "demo.py exit 1:\nTraceback (most recent call last):\n  File \"/home/runner/work/sw-test-patreon-linkedin-poster/sw-test-patreon-linkedin-poster/work/demo/coverage-vs-mutation-score-llm-generated-code/demo.py\", line 540, in <module>\n    main()\n  File \"/home/runner/work/sw-test-patreon-linkedin-poster/sw"
+    }
+  ],
+  "table": {
+    "columns": [
+      "attempt",
+      "error"
+    ],
+    "rows": [
+      [
+        1,
+        "demo.py exit 1:\n  File \"/home/runner/work/sw-test-patreon-linkedin-poster/sw-test-patreon-linkedin-poster/work/demo/coverage-vs-mutation-score-llm-generated-code/demo.py\", line 1\n    ```python\n    ^\nS"
+      ],
+      [
+        2,
+        "demo.py exit 1:\nTraceback (most recent call last):\n  File \"/home/runner/work/sw-test-patreon-linkedin-poster/sw-test-patreon-linkedin-poster/work/demo/coverage-vs-mutation-score-llm-generated-code/dem"
+      ],
+      [
+        3,
+        "demo.py exit 1:\nTraceback (most recent call last):\n  File \"/home/runner/work/sw-test-patreon-linkedin-poster/sw-test-patreon-linkedin-poster/work/demo/coverage-vs-mutation-score-llm-generated-code/dem"
+      ]
+    ]
+  },
+  "notes": [
+    "Topic: Do Traditional Coverage Criteria Catch Bugs in LLM-Style Generated Code? A Mutation-Score Experiment",
+    "No measured technique results exist for this run."
+  ],
+  "attempt_log": [
+    "demo.py exit 1:\n  File \"/home/runner/work/sw-test-patreon-linkedin-poster/sw-test-patreon-linkedin-poster/work/demo/coverage-vs-mutation-score-llm-generated-code/demo.py\", line 1\n    ```python\n    ^\nSyntaxError: invalid syntax\n",
+    "demo.py exit 1:\nTraceback (most recent call last):\n  File \"/home/runner/work/sw-test-patreon-linkedin-poster/sw-test-patreon-linkedin-poster/work/demo/coverage-vs-mutation-score-llm-generated-code/demo.py\", line 403, in <module>\n    main()\n  File \"/home/runner/work/sw-test-patreon-linkedin-poster/sw-test-patreon-linkedin-poster/work/demo/coverage-vs-mutation-score-llm-generated-code/demo.py\", line 312, in main\n    per[sname][fname] = evaluate(fname, src, ex, pr)\n                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/home/runner/work/sw-test-patreon-linkedin-poster/sw-test-patreon-linkedin-poster/work/demo/coverage-vs-mutation-score-llm-generated-code/demo.py\", line 279, in evaluate\n    assert run_suite(original, examples, prop), f\"suite fails on original {name}\"\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: suite fails on original discount\n",
+    "demo.py exit 1:\nTraceback (most recent call last):\n  File \"/home/runner/work/sw-test-patreon-linkedin-poster/sw-test-patreon-linkedin-poster/work/demo/coverage-vs-mutation-score-llm-generated-code/demo.py\", line 540, in <module>\n    main()\n  File \"/home/runner/work/sw-test-patreon-linkedin-poster/sw-test-patreon-linkedin-poster/work/demo/coverage-vs-mutation-score-llm-generated-code/demo.py\", line 442, in main\n    per[sname][fname] = evaluate(fname, src, ex, pr)\n                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/home/runner/work/sw-test-patreon-linkedin-poster/sw-test-patreon-linkedin-poster/work/demo/coverage-vs-mutation-score-llm-generated-code/demo.py\", line 406, in evaluate\n    raise AssertionError(\nAssertionError: suite fails on original discount: mismatches=[((10.0, 9), 72.0, 81.0)] prop_ok=None\n"
+  ]
+}

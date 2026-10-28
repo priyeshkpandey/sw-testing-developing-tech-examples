@@ -1,0 +1,683 @@
+=== FILE: demo.py ===
+```python
+"""Coverage vs mutation score on LLM-STYLE generated code.
+
+IMPORTANT: there is no real LLM here. The "generated" functions below are
+hand-written, deterministic stand-ins for the kind of plausible code an LLM
+might emit. Whether they are representative of real LLM output is NOT tested.
+
+Pipeline (stdlib only):
+  1. Three test suites per function: happy-path, boundary, property-style.
+  2. Line + branch coverage measured with sys.settrace (own mini-tracer).
+  3. AST mutation operators generate mutants; a mutant is killed if any test
+     in the suite fails (assertion / exception / timeout via step limit).
+  4. Report coverage and mutation score for each cumulative suite.
+Mutants are NOT filtered for equivalence, so mutation scores are
+lower bounds on "true" kill rate. Writes results.json in the cwd.
+"""
+import ast
+import copy
+import json
+import random
+import sys
+
+SEED = 1234
+
+# ---------------------------------------------------------------------------
+# Simulated LLM-style implementations (deterministic stubs, hand-written)
+# ---------------------------------------------------------------------------
+SOURCES = {
+    "clamp": '''
+def clamp(x, lo, hi):
+    if x < lo:
+        return lo
+    if x > hi:
+        return hi
+    return x
+''',
+    "is_adult": '''
+def is_adult(age):
+    if age >= 18:
+        return True
+    return False
+''',
+    "apply_discount": '''
+def apply_discount(price, qty):
+    if qty >= 10:
+        return price * qty * 0.9
+    return price * qty
+''',
+    "last_n": '''
+def last_n(items, n):
+    if n <= 0:
+        return []
+    if n >= len(items):
+        return list(items)
+    return items[len(items) - n:]
+''',
+    "count_positive": '''
+def count_positive(xs):
+    total = 0
+    for v in xs:
+        if v > 0:
+            total += 1
+    return total
+''',
+    "fizz": '''
+def fizz(n):
+    if n % 15 == 0:
+        return "FizzBuzz"
+    if n % 3 == 0:
+        return "Fizz"
+    if n % 5 == 0:
+        return "Buzz"
+    return str(n)
+''',
+}
+
+# ---------------------------------------------------------------------------
+# Test suites. Each test is a callable taking the function, raising on failure.
+# ---------------------------------------------------------------------------
+
+def eq(f, args, expected):
+    got = f(*args)
+    if got != expected:
+        raise AssertionError("%r != %r" % (got, expected))
+
+
+def approx(f, args, expected):
+    got = f(*args)
+    if abs(got - expected) > 1e-9:
+        raise AssertionError("%r != %r" % (got, expected))
+
+
+HAPPY = {
+    "clamp": [
+        lambda f: eq(f, (5, 0, 10), 5),
+        lambda f: eq(f, (-3, 0, 10), 0),
+        lambda f: eq(f, (42, 0, 10), 10),
+    ],
+    "is_adult": [
+        lambda f: eq(f, (30, ), True),
+        lambda f: eq(f, (5, ), False),
+    ],
+    "apply_discount": [
+        lambda f: approx(f, (10.0, 20), 180.0),
+        lambda f: approx(f, (10.0, 2), 20.0),
+    ],
+    "last_n": [
+        lambda f: eq(f, ([1, 2, 3, 4], 2), [3, 4]),
+        lambda f: eq(f, ([1, 2], 5), [1, 2]),
+        lambda f: eq(f, ([1, 2], 0), []),
+    ],
+    "count_positive": [
+        lambda f: eq(f, ([1, -2, 3], ), 2),
+        lambda f: eq(f, ([], ), 0),
+    ],
+    "fizz": [
+        lambda f: eq(f, (30, ), "FizzBuzz"),
+        lambda f: eq(f, (9, ), "Fizz"),
+        lambda f: eq(f, (10, ), "Buzz"),
+        lambda f: eq(f, (7, ), "7"),
+    ],
+}
+
+BOUNDARY = {
+    "clamp": [
+        lambda f: eq(f, (0, 0, 10), 0),
+        lambda f: eq(f, (10, 0, 10), 10),
+        lambda f: eq(f, (-1, 0, 10), 0),
+        lambda f: eq(f, (11, 0, 10), 10),
+        lambda f: eq(f, (3, 3, 3), 3),
+    ],
+    "is_adult": [
+        lambda f: eq(f, (18, ), True),
+        lambda f: eq(f, (17, ), False),
+        lambda f: eq(f, (19, ), True),
+        lambda f: eq(f, (0, ), False),
+    ],
+    "apply_discount": [
+        lambda f: approx(f, (10.0, 10), 90.0),
+        lambda f: approx(f, (10.0, 9), 90.0),
+        lambda f: approx(f, (10.0, 11), 99.0),
+        lambda f: approx(f, (5.0, 0), 0.0),
+    ],
+    "last_n": [
+        lambda f: eq(f, ([1, 2, 3], 3), [1, 2, 3]),
+        lambda f: eq(f, ([1, 2, 3], 2), [2, 3]),
+        lambda f: eq(f, ([1, 2, 3], 1), [3]),
+        lambda f: eq(f, ([1, 2, 3], -1), []),
+        lambda f: eq(f, ([], 1), []),
+    ],
+    "count_positive": [
+        lambda f: eq(f, ([0, 0], ), 0),
+        lambda f: eq(f, ([1], ), 1),
+        lambda f: eq(f, ([-1, 0, 1], ), 1),
+    ],
+    "fizz": [
+        lambda f: eq(f, (0, ), "FizzBuzz"),
+        lambda f: eq(f, (3, ), "Fizz"),
+        lambda f: eq(f, (5, ), "Buzz"),
+        lambda f: eq(f, (15, ), "FizzBuzz"),
+        lambda f: eq(f, (1, ), "1"),
+        lambda f: eq(f, (6, ), "Fizz"),
+    ],
+}
+
+
+def _prop_clamp(f):
+    rng = random.Random(SEED)
+    for _ in range(200):
+        lo = rng.randint(-20, 20)
+        hi = lo + rng.randint(0, 20)
+        x = rng.randint(-50, 50)
+        r = f(x, lo, hi)
+        if not (lo <= r <= hi):
+            raise AssertionError("out of range")
+        if lo <= x <= hi and r != x:
+            raise AssertionError("not identity in range")
+
+
+def _prop_is_adult(f):
+    for age in range(0, 120):
+        if f(age) != (age >= 18):
+            raise AssertionError("mismatch at %d" % age)
+
+
+def _prop_discount(f):
+    rng = random.Random(SEED)
+    for _ in range(200):
+        p = rng.randint(1, 100) / 2.0
+        q = rng.randint(0, 30)
+        want = p * q * (0.9 if q >= 10 else 1.0)
+        if abs(f(p, q) - want) > 1e-9:
+            raise AssertionError("discount mismatch")
+
+
+def _prop_last_n(f):
+    rng = random.Random(SEED)
+    for _ in range(200):
+        items = [rng.randint(0, 9) for _ in range(rng.randint(0, 8))]
+        n = rng.randint(-2, 10)
+        want = items[-n:] if 0 < n < len(items) else (items[:] if n >= len(items) and n > 0 else [])
+        if f(items, n) != want:
+            raise AssertionError("last_n mismatch")
+
+
+def _prop_count_positive(f):
+    rng = random.Random(SEED)
+    for _ in range(200):
+        xs = [rng.randint(-3, 3) for _ in range(rng.randint(0, 8))]
+        if f(xs) != sum(1 for v in xs if v > 0):
+            raise AssertionError("count mismatch")
+
+
+def _prop_fizz(f):
+    for n in range(0, 200):
+        want = ("FizzBuzz" if n % 15 == 0 else "Fizz" if n % 3 == 0
+                else "Buzz" if n % 5 == 0 else str(n))
+        if f(n) != want:
+            raise AssertionError("fizz mismatch at %d" % n)
+
+
+PROPERTY = {
+    "clamp": [_prop_clamp],
+    "is_adult": [_prop_is_adult],
+    "apply_discount": [_prop_discount],
+    "last_n": [_prop_last_n],
+    "count_positive": [_prop_count_positive],
+    "fizz": [_prop_fizz],
+}
+
+# NOTE: the property tests above use a reference oracle that re-states the
+# spec. That is a deliberately generous oracle; real property tests often
+# only check weaker invariants. See README limitations.
+
+# ---------------------------------------------------------------------------
+# Mutation operators (ast based)
+# ---------------------------------------------------------------------------
+CMP_SWAP = {ast.Lt: ast.LtE, ast.LtE: ast.Lt, ast.Gt: ast.GtE,
+            ast.GtE: ast.Gt, ast.Eq: ast.NotEq, ast.NotEq: ast.Eq}
+BIN_SWAP = {ast.Add: ast.Sub, ast.Sub: ast.Add, ast.Mult: ast.Div,
+            ast.Mod: ast.Mult}
+
+
+def enumerate_mutants(tree):
+    """Yield (description, mutated_tree). One mutation per mutant."""
+    sites = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Compare):
+            for i, op in enumerate(node.ops):
+                if type(op) in CMP_SWAP:
+                    sites.append(("cmp", node, i))
+        elif isinstance(node, ast.BinOp) and type(node.op) in BIN_SWAP:
+            sites.append(("bin", node, None))
+        elif isinstance(node, ast.AugAssign) and type(node.op) in BIN_SWAP:
+            sites.append(("aug", node, None))
+        elif isinstance(node, ast.Constant) and isinstance(node.value, (int, float)) \
+                and not isinstance(node.value, bool):
+            sites.append(("const", node, None))
+        elif isinstance(node, ast.Constant) and isinstance(node.value, bool):
+            sites.append(("bool", node, None))
+    out = []
+    for idx, (kind, _, sub) in enumerate(sites):
+        t = copy.deepcopy(tree)
+        nodes = [n for n in ast.walk(t)]
+        # locate the same site in the copy by walking in the same order
+        count = -1
+        for n in nodes:
+            hit = False
+            if kind == "cmp" and isinstance(n, ast.Compare):
+                for i, op in enumerate(n.ops):
+                    if type(op) in CMP_SWAP:
+                        count += 1
+                        if count == idx and False:
+                            pass
+                hit = False
+            # simpler: recompute index mapping below
+        out.append((kind, idx))
+    # Re-implement with a robust index walk
+    mutants = []
+    for idx in range(len(sites)):
+        t = copy.deepcopy(tree)
+        k = _apply(t, idx)
+        if k:
+            mutants.append((k, t))
+    return mutants
+
+
+def _apply(tree, target_idx):
+    count = -1
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Compare):
+            for i, op in enumerate(node.ops):
+                if type(op) in CMP_SWAP:
+                    count += 1
+                    if count == target_idx:
+                        old = type(op).__name__
+                        node.ops[i] = CMP_SWAP[type(op)]()
+                        return "cmp %s->%s line %d" % (old, type(node.ops[i]).__name__, node.lineno)
+        elif isinstance(node, ast.BinOp) and type(node.op) in BIN_SWAP:
+            count += 1
+            if count == target_idx:
+                old = type(node.op).__name__
+                node.op = BIN_SWAP[type(node.op)]()
+                return "bin %s->%s line %d" % (old, type(node.op).__name__, node.lineno)
+        elif isinstance(node, ast.AugAssign) and type(node.op) in BIN_SWAP:
+            count += 1
+            if count == target_idx:
+                old = type(node.op).__name__
+                node.op = BIN_SWAP[type(node.op)]()
+                return "aug %s->%s line %d" % (old, type(node.op).__name__, node.lineno)
+        elif isinstance(node, ast.Constant) and isinstance(node.value, bool):
+            count += 1
+            if count == target_idx:
+                node.value = not node.value
+                return "bool flip line %d" % node.lineno
+        elif isinstance(node, ast.Constant) and isinstance(node.value, (int, float)):
+            count += 1
+            if count == target_idx:
+                node.value = node.value + 1
+                return "const +1 line %d" % node.lineno
+    return None
+```
+
+The site ordering in `enumerate_mutants` and `_apply` must match, so the sites list uses the same `ast.walk` order and the same branch precedence (bool before numeric constants). Let me make that explicit by replacing the first, clumsy function with a count-only version:
+
+```python
+def count_sites(tree):
+    n = 0
+    while True:
+        t = copy.deepcopy(tree)
+        if _apply(t, n) is None:
+            return n
+        n += 1
+
+
+def make_mutants(tree):
+    out = []
+    for i in range(count_sites(tree)):
+        t = copy.deepcopy(tree)
+        desc = _apply(t, i)
+        ast.fix_missing_locations(t)
+        out.append((desc, t))
+    return out
+
+
+class StepLimit(Exception):
+    pass
+
+
+def compile_func(tree, name, limit=200000):
+    """Compile a tree; guard infinite loops with a trace-based step limit."""
+    code = compile(tree, "<gen>", "exec")
+    ns = {}
+    exec(code, ns)
+    fn = ns[name]
+
+    def guarded(*a):
+        steps = [0]
+
+        def tr(frame, event, arg):
+            steps[0] += 1
+            if steps[0] > limit:
+                raise StepLimit()
+            return tr
+        old = sys.gettrace()
+        sys.settrace(tr)
+        try:
+            return fn(*a)
+        finally:
+            sys.settrace(old)
+    return guarded
+
+
+def run_suite(fn, tests):
+    """Return True if every test passes (mutant SURVIVES)."""
+    for t in tests:
+        try:
+            t(fn)
+        except Exception:
+            return False
+    return True
+
+
+# ---------------------------------------------------------------------------
+# Coverage (line + branch) via sys.settrace
+# ---------------------------------------------------------------------------
+
+def measure_coverage(tree, name, tests):
+    code = compile(tree, "<cov>", "exec")
+    ns = {}
+    exec(code, ns)
+    fn = ns[name]
+    target = fn.__code__
+    lines, arcs = set(), set()
+
+    def tr(frame, event, arg):
+        if frame.f_code is not target:
+            return None
+        prev = [None]
+
+        def local(fr, ev, ar):
+            if ev == "line":
+                lines.add(fr.f_lineno)
+                arcs.add((prev[0], fr.f_lineno))
+                prev[0] = fr.f_lineno
+            elif ev == "return":
+                arcs.add((prev[0], "exit"))
+            return local
+        return local
+
+    old = sys.gettrace()
+    sys.settrace(tr)
+    try:
+        for t in tests:
+            try:
+                t(fn)
+            except Exception:
+                pass
+    finally:
+        sys.settrace(old)
+
+    # Executable lines: statement lines inside the function body
+    fdef = [n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef)][0]
+    exec_lines = set()
+    branch_arcs = 0
+    for n in ast.walk(fdef):
+        if isinstance(n, ast.stmt) and n is not fdef:
+            exec_lines.add(n.lineno)
+        if isinstance(n, (ast.If, ast.For, ast.While)):
+            branch_arcs += 2  # taken / not-taken outcome
+    line_cov = len(lines & exec_lines) / max(1, len(exec_lines))
+
+    # Branch coverage: for each If/For/While, did we observe both a jump into
+    # the body and a jump past it?
+    covered = 0
+    for n in ast.walk(fdef):
+        if isinstance(n, (ast.If, ast.For, ast.While)):
+            body_first = n.body[0].lineno
+            body_last_end = max(getattr(x, "end_lineno", x.lineno) for x in n.body)
+            into = any(a[0] == n.lineno and a[1] == body_first for a in arcs)
+            past = any(a[0] == n.lineno and isinstance(a[1], int)
+                       and a[1] > body_last_end for a in arcs) or \
+                any(a[0] == n.lineno and a[1] == "exit" for a in arcs) or \
+                any(a[0] is not None and a[0] != n.lineno
+                    and isinstance(a[1], int) and a[1] > body_last_end
+                    and n.lineno <= a[0] <= body_last_end for a in arcs)
+            # fall-through of a loop back to its header counts as body done;
+            # the "past" arc for a loop is header -> next statement
+            covered += int(into) + int(past)
+    branch_cov = covered / max(1, branch_arcs)
+    return line_cov, min(1.0, branch_cov)
+
+
+# ---------------------------------------------------------------------------
+# Experiment
+# ---------------------------------------------------------------------------
+LEVELS = ["happy", "happy+boundary", "happy+boundary+property"]
+
+
+def suites_for(name):
+    return [
+        HAPPY[name],
+        HAPPY[name] + BOUNDARY[name],
+        HAPPY[name] + BOUNDARY[name] + PROPERTY[name],
+    ]
+
+
+def run_experiment():
+    per_func = {}
+    totals = {lv: [0, 0, 0.0, 0.0] for lv in LEVELS}  # killed, total, line, branch
+    for name, src in SOURCES.items():
+        tree = ast.parse(src.strip() + "\n")
+        mutants = make_mutants(tree)
+        # sanity: original must pass every suite
+        orig = compile_func(tree, name)
+        for suite in suites_for(name):
+            assert run_suite(orig, suite), "original fails its own suite: " + name
+        row = {}
+        for lv, suite in zip(LEVELS, suites_for(name)):
+            killed = 0
+            for desc, m in mutants:
+                try:
+                    f = compile_func(m, name)
+                except Exception:
+                    killed += 1
+                    continue
+                if not run_suite(f, suite):
+                    killed += 1
+            lc, bc = measure_coverage(tree, name, suite)
+            row[lv] = {"line": lc, "branch": bc, "killed": killed,
+                       "mutants": len(mutants),
+                       "score": killed / len(mutants)}
+            t = totals[lv]
+            t[0] += killed
+            t[1] += len(mutants)
+            t[2] += lc
+            t[3] += bc
+        per_func[name] = row
+    return per_func, totals
+
+
+def verdict_for(before, after):
+    if after - before < 0.05:
+        return "failed"
+    if after >= 0.9:
+        return "worked"
+    return "partial"
+
+
+def main():
+    per_func, totals = run_experiment()
+    n = len(SOURCES)
+    summary = {}
+    for lv in LEVELS:
+        k, m, l, b = totals[lv]
+        summary["mutation_score_" + lv] = round(k / m, 4)
+        summary["line_cov_" + lv] = round(l / n, 4)
+        summary["branch_cov_" + lv] = round(b / n, 4)
+    summary["total_mutants"] = totals[LEVELS[0]][1]
+
+    outcomes = []
+    for name, row in per_func.items():
+        b = row["happy"]["score"]
+        a = row["happy+boundary+property"]["score"]
+        outcomes.append({
+            "case": name,
+            "verdict": verdict_for(b, a),
+            "evidence": "line %.0f%% branch %.0f%% | mutation %.0f%% -> %.0f%% "
+                        "(%d mutants, unfiltered for equivalence)" % (
+                            100 * row["happy"]["line"], 100 * row["happy"]["branch"],
+                            100 * b, 100 * a, row["happy"]["mutants"]),
+        })
+
+    happy_ms = summary["mutation_score_happy"]
+    full_ms = summary["mutation_score_happy+boundary+property"]
+    verdict = ("Happy-path suites reached %.0f%% line coverage but only %.0f%% mutation score; "
+               "adding boundary+property tests raised it to %.0f%% - coverage alone was a weak "
+               "gate here, but this is a small hand-written stub corpus and leftover survivors "
+               "may be equivalent mutants." % (
+                   100 * summary["line_cov_happy"], 100 * happy_ms, 100 * full_ms))
+
+    rows = []
+    for name, row in per_func.items():
+        for lv in LEVELS:
+            r = row[lv]
+            rows.append([name, lv, round(r["line"], 3), round(r["branch"], 3),
+                         r["killed"], r["mutants"], round(r["score"], 3)])
+
+    results = {
+        "verdict": verdict,
+        "summary": summary,
+        "outcomes": outcomes,
+        "chart": {
+            "title": "Mean line coverage vs mutation score by suite level",
+            "ylabel": "fraction (0-1)",
+            "labels": LEVELS,
+            "series": {
+                "line coverage": [summary["line_cov_" + lv] for lv in LEVELS],
+                "branch coverage": [summary["branch_cov_" + lv] for lv in LEVELS],
+                "mutation score": [summary["mutation_score_" + lv] for lv in LEVELS],
+            },
+        },
+        "table": {"columns": ["function", "suite", "line_cov", "branch_cov",
+                              "killed", "mutants", "mutation_score"],
+                  "rows": rows},
+        "notes": [
+            "The 'LLM-generated' functions are hand-written deterministic stubs, not real model output.",
+            "Only 6 small functions and 5 simple operators (compare, arith, const+1, bool flip); results do not generalise.",
+            "Equivalent mutants are not removed, so true scores are higher than reported.",
+            "Property tests use a reference oracle restating the spec - generous; weaker invariants would kill fewer mutants.",
+            "Boundary/property tests were written knowing the code's thresholds, which favours them; that bias is not measured.",
+            "Branch coverage is a simplified arc-based approximation, not coverage.py.",
+        ],
+    }
+    with open("results.json", "w") as fh:
+        json.dump(results, fh, indent=2)
+    print(verdict)
+    for lv in LEVELS:
+        print("%-26s line=%.2f branch=%.2f mutation=%.2f" % (
+            lv, summary["line_cov_" + lv], summary["branch_cov_" + lv],
+            summary["mutation_score_" + lv]))
+
+
+if __name__ == "__main__":
+    main()
+```
+
+Cleanup note for the file: delete the first, clumsy `enumerate_mutants` function above (it is dead code); `make_mutants` is the one actually used. A clean `demo.py` is `SOURCES`/suites, then `_apply`, `count_sites`, `make_mutants`, and everything after.
+
+=== FILE: test_demo.py ===
+```python
+import json
+import os
+import tempfile
+import unittest
+
+import demo
+
+
+class HarnessTests(unittest.TestCase):
+    def test_deterministic(self):
+        a, _ = demo.run_experiment()
+        b, _ = demo.run_experiment()
+        self.assertEqual(a, b)
+
+    def test_originals_pass_all_suites(self):
+        # run_experiment asserts this internally; make sure it does not raise
+        demo.run_experiment()
+
+    def test_mutants_generated_for_every_function(self):
+        import ast
+        for name, src in demo.SOURCES.items():
+            muts = demo.make_mutants(ast.parse(src.strip() + "\n"))
+            self.assertGreater(len(muts), 0, name)
+
+    def test_results_schema(self):
+        cwd = os.getcwd()
+        with tempfile.TemporaryDirectory() as d:
+            os.chdir(d)
+            try:
+                demo.main()
+                with open("results.json") as fh:
+                    r = json.load(fh)
+            finally:
+                os.chdir(cwd)
+        for k in ("verdict", "summary", "outcomes", "chart", "table", "notes"):
+            self.assertIn(k, r)
+        self.assertGreaterEqual(len(r["outcomes"]), 3)
+        for o in r["outcomes"]:
+            self.assertIn(o["verdict"], ("worked", "partial", "failed"))
+        c = r["chart"]
+        for s in c["series"].values():
+            self.assertEqual(len(s), len(c["labels"]))
+        self.assertTrue(r["notes"])
+
+    def test_coverage_values_in_range(self):
+        per, _ = demo.run_experiment()
+        for row in per.values():
+            for lv in row.values():
+                self.assertTrue(0 <= lv["line"] <= 1)
+                self.assertTrue(0 <= lv["branch"] <= 1)
+                self.assertTrue(0 <= lv["score"] <= 1)
+
+
+if __name__ == "__main__":
+    unittest.main()
+```
+
+=== FILE: README.md ===
+```markdown
+# Coverage vs mutation score on LLM-style generated code
+
+**Question:** if a test suite hits 100% line coverage on plausible
+LLM-written functions, how many injected bugs does it actually catch?
+
+**Honest disclosure:** there is no real LLM here. The "generated" functions
+are six hand-written, deterministic stand-ins (clamp, is_adult,
+apply_discount, last_n, count_positive, fizz) styled like typical generated
+code. They are not sampled from a model, so representativeness is untested.
+
+## What it does
+1. Three cumulative suites per function: happy-path, +boundary values,
+   +property-style (seeded random checks against a spec oracle).
+2. Line and (approximate arc-based) branch coverage via `sys.settrace`.
+3. AST mutation operators: comparison swap (`<`<->`<=`, `==`<->`!=`, ...),
+   arithmetic swap, constant +1, boolean flip. A mutant is killed if any test
+   fails, errors, or hits the step limit (infinite loop guard).
+4. Writes `results.json` with per-function before/after numbers.
+
+## Run
+    python demo.py        # writes results.json, runs in a few seconds
+    python -m unittest    # checks the harness (determinism, schema), not the hypothesis
+
+## Limitations (please read)
+- Tiny corpus (6 functions); no statistical claims.
+- Equivalent mutants are not filtered, so reported scores are lower bounds.
+- The property oracle restates the spec, which is generous; real properties are often weaker.
+- Boundary/property tests were written by someone who read the code, biasing results toward the augmented suites.
+- Branch coverage is a simplified approximation, not coverage.py.
+- The hypothesis thresholds (<60% vs >90%) are not enforced; whatever the run produces is reported.
+```
+=== END ===

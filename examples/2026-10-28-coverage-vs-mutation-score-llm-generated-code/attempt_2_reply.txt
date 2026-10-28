@@ -1,0 +1,497 @@
+=== FILE: demo.py ===
+```python
+"""Coverage vs mutation score on LLM-style generated functions.
+
+The "LLM-generated" functions below are hand-written, deterministic stand-ins
+(NOT output from a real model). They are plausible-looking implementations of
+the kind an LLM might produce. This experiment measures, using only the stdlib:
+  - line coverage   (sys.settrace)
+  - branch coverage (sys.settrace, line-transition based, per decision line)
+  - mutation score  (ast-based mutation operators)
+for three test suites per function: happy-path, boundary-augmented, and
+property-augmented. Nothing is tuned after the fact; outcomes are reported as-is.
+"""
+import ast
+import copy
+import json
+import random
+import sys
+
+random.seed(1234)
+
+# --------------------------------------------------------------------------
+# Subjects: LLM-style implementations (clean, no seeded bugs in the original).
+# --------------------------------------------------------------------------
+SUBJECTS = {
+    "clamp": '''
+def clamp(x, lo, hi):
+    if x < lo:
+        return lo
+    if x > hi:
+        return hi
+    return x
+''',
+    "is_adult": '''
+def is_adult(age):
+    if age >= 18:
+        return True
+    return False
+''',
+    "max_of_three": '''
+def max_of_three(a, b, c):
+    best = a
+    if b > best:
+        best = b
+    if c > best:
+        best = c
+    return best
+''',
+    "last_n": '''
+def last_n(items, n):
+    if n <= 0:
+        return []
+    if n >= len(items):
+        return list(items)
+    return list(items[len(items) - n:])
+''',
+    "discount": '''
+def discount(total, is_member):
+    rate = 0
+    if total >= 100:
+        rate = 10
+    if is_member and total > 50:
+        rate = rate + 5
+    return total - total * rate // 100
+''',
+    "count_positive": '''
+def count_positive(xs):
+    count = 0
+    for v in xs:
+        if v > 0:
+            count += 1
+    return count
+''',
+}
+
+# --------------------------------------------------------------------------
+# Test suites. Each suite is a list of (args, expected) example checks and an
+# optional list of property checks: callables f -> bool.
+# --------------------------------------------------------------------------
+HAPPY = {
+    "clamp": [((5, 0, 10), 5), ((-3, 0, 10), 0), ((42, 0, 10), 10)],
+    "is_adult": [((30,), True), ((5,), False)],
+    "max_of_three": [((1, 2, 3), 3), ((3, 2, 1), 3), ((1, 5, 3), 5)],
+    "last_n": [(([1, 2, 3, 4], 2), [3, 4]), (([1, 2], 5), [1, 2]), (([1, 2], 0), [])],
+    "discount": [((200, True), 170), ((60, True), 57), ((10, False), 10)],
+    "count_positive": [(([1, -2, 3],), 2), (([],), 0)],
+}
+
+BOUNDARY = {
+    "clamp": [((0, 0, 10), 0), ((10, 0, 10), 10), ((-1, 0, 10), 0), ((11, 0, 10), 10), ((5, 5, 5), 5)],
+    "is_adult": [((18,), True), ((17,), False), ((19,), True), ((0,), False)],
+    "max_of_three": [((2, 2, 2), 2), ((3, 3, 1), 3), ((1, 3, 3), 3), ((1, 3, 2), 3), ((-1, -2, -3), -1)],
+    "last_n": [(([1, 2, 3], 3), [1, 2, 3]), (([1, 2, 3], 1), [3]), (([1, 2, 3], -1), []),
+               (([1, 2, 3], 4), [1, 2, 3]), (([], 1), [])],
+    "discount": [((100, False), 90), ((99, False), 99), ((50, True), 50), ((51, True), 49),
+                 ((100, True), 85), ((99, True), 94)],
+    "count_positive": [(([0],), 0), (([1],), 1), (([-1, 0, 1],), 1), (([0, 0, 5],), 1)],
+}
+
+
+def _prop_clamp(f):
+    for x in range(-12, 25):
+        r = f(x, 0, 10)
+        if not (0 <= r <= 10):
+            return False
+        if 0 <= x <= 10 and r != x:
+            return False
+    return True
+
+
+def _prop_is_adult(f):
+    return all(f(a) == (a >= 18) for a in range(0, 40))
+
+
+def _prop_max3(f):
+    vals = range(-3, 4)
+    return all(f(a, b, c) == max(a, b, c) for a in vals for b in vals for c in vals)
+
+
+def _prop_last_n(f):
+    for n in range(-2, 7):
+        for k in range(0, 6):
+            items = list(range(k))
+            exp = items[-n:] if n > 0 else []
+            if f(items, n) != exp:
+                return False
+    return True
+
+
+def _prop_discount(f):
+    for t in range(0, 130):
+        for m in (False, True):
+            rate = 10 if t >= 100 else 0
+            if m and t > 50:
+                rate += 5
+            if f(t, m) != t - t * rate // 100:
+                return False
+    return True
+
+
+def _prop_count_positive(f):
+    rng = random.Random(7)
+    for _ in range(60):
+        xs = [rng.randint(-3, 3) for _ in range(rng.randint(0, 6))]
+        if f(xs) != sum(1 for v in xs if v > 0):
+            return False
+    return True
+
+
+PROPS = {
+    "clamp": _prop_clamp, "is_adult": _prop_is_adult, "max_of_three": _prop_max3,
+    "last_n": _prop_last_n, "discount": _prop_discount, "count_positive": _prop_count_positive,
+}
+
+# --------------------------------------------------------------------------
+# AST mutation operators.
+# --------------------------------------------------------------------------
+CMP_SWAP = {
+    ast.Lt: [ast.LtE, ast.Gt], ast.LtE: [ast.Lt, ast.GtE],
+    ast.Gt: [ast.GtE, ast.Lt], ast.GtE: [ast.Gt, ast.LtE],
+    ast.Eq: [ast.NotEq], ast.NotEq: [ast.Eq],
+}
+BIN_SWAP = {ast.Add: [ast.Sub], ast.Sub: [ast.Add], ast.Mult: [ast.FloorDiv], ast.FloorDiv: [ast.Mult]}
+
+
+def generate_mutants(src):
+    tree = ast.parse(src)
+    mutants = []
+    nodes = list(ast.walk(tree))
+    for idx, node in enumerate(nodes):
+        if isinstance(node, ast.Compare):
+            for i, op in enumerate(node.ops):
+                for new in CMP_SWAP.get(type(op), []):
+                    mutants.append((idx, "cmp", i, new, f"{type(op).__name__}->{new.__name__} (line {node.lineno})"))
+        elif isinstance(node, ast.BinOp):
+            for new in BIN_SWAP.get(type(node.op), []):
+                mutants.append((idx, "bin", 0, new, f"{type(node.op).__name__}->{new.__name__} (line {node.lineno})"))
+        elif isinstance(node, ast.BoolOp):
+            new = ast.Or if isinstance(node.op, ast.And) else ast.And
+            mutants.append((idx, "bool", 0, new, f"{type(node.op).__name__}->{new.__name__} (line {node.lineno})"))
+        elif isinstance(node, ast.Constant) and type(node.value) is int:
+            mutants.append((idx, "const", 0, node.value + 1, f"const {node.value}->{node.value + 1} (line {node.lineno})"))
+        elif isinstance(node, ast.AugAssign) and isinstance(node.op, ast.Add):
+            mutants.append((idx, "aug", 0, ast.Sub, f"+=->-= (line {node.lineno})"))
+    out = []
+    for idx, kind, i, new, desc in mutants:
+        t = ast.parse(src)
+        n = list(ast.walk(t))[idx]
+        if kind == "cmp":
+            n.ops[i] = new()
+        elif kind in ("bin", "aug"):
+            n.op = new()
+        elif kind == "bool":
+            n.op = new()
+        elif kind == "const":
+            n.value = new
+        ast.fix_missing_locations(t)
+        out.append((desc, t))
+    return out
+
+
+def load(tree_or_src, name):
+    if isinstance(tree_or_src, str):
+        tree_or_src = ast.parse(tree_or_src)
+    code = compile(tree_or_src, f"<{name}>", "exec")
+    ns = {}
+    exec(code, ns)
+    return ns[name]
+
+
+# --------------------------------------------------------------------------
+# Suite execution.
+# --------------------------------------------------------------------------
+def run_suite(fn, examples, prop):
+    """Return True if the suite PASSES (i.e. mutant survives)."""
+    try:
+        for args, exp in examples:
+            if fn(*args) != exp:
+                return False
+        if prop is not None and not prop(fn):
+            return False
+    except Exception:
+        return False
+    return True
+
+
+def measure_coverage(src, name, examples, prop):
+    """Line and branch coverage of the function body via sys.settrace."""
+    tree = ast.parse(src)
+    fdef = tree.body[0]
+    body_lines = set()
+    branch_lines = {}  # decision line -> set of outcomes needed
+    for node in ast.walk(fdef):
+        if isinstance(node, ast.stmt) and node is not fdef:
+            body_lines.add(node.lineno)
+        if isinstance(node, (ast.If, ast.For, ast.While)):
+            branch_lines[node.lineno] = node
+    code = compile(tree, f"<cov_{name}>", "exec")
+    ns = {}
+    exec(code, ns)
+    fn = ns[name]
+
+    executed = set()
+    taken = set()  # (decision_line, 'T'|'F')
+    state = {"prev": None}
+
+    def tracer(frame, event, arg):
+        if frame.f_code.co_filename != f"<cov_{name}>":
+            return tracer
+        if event == "line":
+            ln = frame.f_lineno
+            executed.add(ln)
+            prev = state["prev"]
+            if prev in branch_lines:
+                node = branch_lines[prev]
+                first_body = node.body[0].lineno
+                taken.add((prev, "T" if ln == first_body else "F"))
+            state["prev"] = ln
+        elif event == "return":
+            prev = state["prev"]
+            if prev in branch_lines:
+                node = branch_lines[prev]
+                taken.add((prev, "T" if node.body[0].lineno == prev else "F"))
+            state["prev"] = None
+        return tracer
+
+    sys.settrace(tracer)
+    try:
+        run_suite(fn, examples, prop)
+    finally:
+        sys.settrace(None)
+
+    line_cov = len(executed & body_lines) / len(body_lines) if body_lines else 1.0
+    total_branches = 2 * len(branch_lines)
+    branch_cov = len(taken) / total_branches if total_branches else 1.0
+    return line_cov, min(branch_cov, 1.0)
+
+
+def evaluate(name, src, examples, prop):
+    original = load(src, name)
+    assert run_suite(original, examples, prop), f"suite fails on original {name}"
+    line_cov, branch_cov = measure_coverage(src, name, examples, prop)
+    mutants = generate_mutants(src)
+    killed = 0
+    survivors = []
+    for desc, tree in mutants:
+        try:
+            m = load(tree, name)
+        except Exception:
+            continue
+        if run_suite(m, examples, prop):
+            survivors.append(desc)
+        else:
+            killed += 1
+    total = killed + len(survivors)
+    return {
+        "line": line_cov, "branch": branch_cov,
+        "mutants": total, "killed": killed,
+        "score": killed / total if total else 1.0,
+        "survivors": survivors,
+    }
+
+
+def main():
+    suites = {
+        "happy": lambda n: (HAPPY[n], None),
+        "happy+boundary": lambda n: (HAPPY[n] + BOUNDARY[n], None),
+        "happy+boundary+property": lambda n: (HAPPY[n] + BOUNDARY[n], PROPS[n]),
+    }
+    per = {s: {} for s in suites}
+    for sname, make in suites.items():
+        for fname, src in SUBJECTS.items():
+            ex, pr = make(fname)
+            per[sname][fname] = evaluate(fname, src, ex, pr)
+
+    def agg(sname, key):
+        vals = [per[sname][f][key] for f in SUBJECTS]
+        return sum(vals) / len(vals)
+
+    def agg_score(sname):
+        k = sum(per[sname][f]["killed"] for f in SUBJECTS)
+        t = sum(per[sname][f]["mutants"] for f in SUBJECTS)
+        return k / t if t else 0.0
+
+    summary = {}
+    for s in suites:
+        key = s.replace("+", "_")
+        summary[f"{key}_line_cov_pct"] = round(100 * agg(s, "line"), 1)
+        summary[f"{key}_branch_cov_pct"] = round(100 * agg(s, "branch"), 1)
+        summary[f"{key}_mutation_score_pct"] = round(100 * agg_score(s), 1)
+    summary["total_mutants"] = sum(per["happy"][f]["mutants"] for f in SUBJECTS)
+
+    happy_score = summary["happy_mutation_score_pct"]
+    full_score = summary["happy_boundary_property_mutation_score_pct"]
+    happy_line = summary["happy_line_cov_pct"]
+
+    outcomes = []
+    for fname in SUBJECTS:
+        h = per["happy"][fname]
+        b = per["happy+boundary+property"][fname]
+        gain = b["score"] - h["score"]
+        if h["score"] < 0.6 and b["score"] >= 0.9:
+            v = "worked"
+        elif gain > 0.0 and b["score"] < 0.9:
+            v = "partial"
+        elif gain <= 0.0:
+            v = "failed"
+        else:
+            v = "partial"
+        ev = (f"happy: line {h['line']*100:.0f}% branch {h['branch']*100:.0f}% mutation {h['score']*100:.0f}% "
+              f"({h['killed']}/{h['mutants']}); full: mutation {b['score']*100:.0f}% "
+              f"({b['killed']}/{b['mutants']}); surviving after full: "
+              f"{b['survivors'][:3] if b['survivors'] else 'none'}")
+        outcomes.append({"case": f"{fname}: coverage vs mutation score", "verdict": v, "evidence": ev})
+
+    labels = list(SUBJECTS.keys())
+    chart = {
+        "title": "Happy-path suite: coverage vs mutation score per function",
+        "ylabel": "percent",
+        "labels": labels,
+        "series": {
+            "line coverage %": [round(100 * per["happy"][f]["line"], 1) for f in labels],
+            "branch coverage %": [round(100 * per["happy"][f]["branch"], 1) for f in labels],
+            "mutation score % (happy)": [round(100 * per["happy"][f]["score"], 1) for f in labels],
+            "mutation score % (full)": [round(100 * per["happy+boundary+property"][f]["score"], 1) for f in labels],
+        },
+    }
+    rows = []
+    for fname in labels:
+        r = [fname]
+        for s in suites:
+            d = per[s][fname]
+            r += [round(100 * d["line"]), round(100 * d["branch"]), round(100 * d["score"])]
+        rows.append(r)
+    cols = ["function"]
+    for s in suites:
+        cols += [f"{s} line%", f"{s} branch%", f"{s} mut%"]
+    table = {"columns": cols, "rows": rows}
+
+    if happy_score < 60 and full_score > 90:
+        verdict = (f"Hypothesis held on this toy set: happy-path suites had {happy_line}% line coverage but only "
+                   f"{happy_score}% mutation score, rising to {full_score}% with boundary+property tests.")
+    else:
+        verdict = (f"Hypothesis only partly held: happy-path suites reached {happy_line}% line coverage with "
+                   f"{happy_score}% mutation score; boundary+property tests raised it to {full_score}%, "
+                   f"but thresholds <60% / >90% were not both met.")
+
+    notes = [
+        "The 'LLM-generated' functions are hand-written deterministic stand-ins, not output from a real model.",
+        "Only 6 tiny functions; results are illustrative, not statistically generalisable to real LLM code.",
+        "Mutation operators are a small set (comparison, arithmetic, bool-op, int-constant, +=); no equivalent-mutant filtering, so some survivors may be semantically equivalent and cap the achievable score.",
+        "Branch coverage is a simplified line-transition measure on if/for/while decisions, not a full CFG tool.",
+        "Property checks here are exhaustive/seeded oracles over small domains; they are strong partly because each function has a simple reference model. Real code often lacks one.",
+        "Suites were written once up front and not tuned against surviving mutants.",
+    ]
+
+    results = {"verdict": verdict, "summary": summary, "outcomes": outcomes,
+               "chart": chart, "table": table, "notes": notes}
+    with open("results.json", "w") as fh:
+        json.dump(results, fh, indent=2)
+    print(json.dumps({"verdict": verdict, "summary": summary}, indent=2))
+
+
+if __name__ == "__main__":
+    main()
+```
+=== FILE: test_demo.py ===
+```python
+import json
+import os
+import tempfile
+import unittest
+
+import demo
+
+
+class TestHarness(unittest.TestCase):
+    def test_originals_pass_all_suites(self):
+        for name, src in demo.SUBJECTS.items():
+            fn = demo.load(src, name)
+            self.assertTrue(demo.run_suite(fn, demo.HAPPY[name], None))
+            self.assertTrue(demo.run_suite(fn, demo.HAPPY[name] + demo.BOUNDARY[name], demo.PROPS[name]))
+
+    def test_mutants_generated_and_differ(self):
+        for name, src in demo.SUBJECTS.items():
+            self.assertGreater(len(demo.generate_mutants(src)), 0)
+
+    def test_deterministic(self):
+        a = demo.evaluate("clamp", demo.SUBJECTS["clamp"], demo.HAPPY["clamp"], None)
+        b = demo.evaluate("clamp", demo.SUBJECTS["clamp"], demo.HAPPY["clamp"], None)
+        self.assertEqual(a, b)
+
+    def test_results_schema(self):
+        cwd = os.getcwd()
+        with tempfile.TemporaryDirectory() as d:
+            os.chdir(d)
+            try:
+                demo.main()
+                with open("results.json") as fh:
+                    r = json.load(fh)
+            finally:
+                os.chdir(cwd)
+        for k in ("verdict", "summary", "outcomes", "chart", "table", "notes"):
+            self.assertIn(k, r)
+        self.assertIsInstance(r["verdict"], str)
+        self.assertGreaterEqual(len(r["outcomes"]), 3)
+        for o in r["outcomes"]:
+            self.assertIn(o["verdict"], ("worked", "partial", "failed"))
+            self.assertIn("case", o)
+            self.assertIn("evidence", o)
+        for k in ("title", "ylabel", "labels", "series"):
+            self.assertIn(k, r["chart"])
+        for s in r["chart"]["series"].values():
+            self.assertEqual(len(s), len(r["chart"]["labels"]))
+        self.assertIn("columns", r["table"])
+        for row in r["table"]["rows"]:
+            self.assertEqual(len(row), len(r["table"]["columns"]))
+        self.assertGreater(len(r["notes"]), 0)
+
+
+if __name__ == "__main__":
+    unittest.main()
+```
+=== FILE: README.md ===
+```markdown
+# Coverage vs mutation score on LLM-style generated code
+
+**Question:** Do line/branch coverage criteria tell you whether a test suite actually catches bugs in
+AI-written code, compared with mutation score?
+
+## What it does
+- Defines 6 small functions written in a plausible "LLM-generated" style (clamp, age check, max-of-three,
+  slicing, discount tiers, counting). **These are hand-written deterministic stand-ins, not real model
+  output.**
+- Builds three test suites per function: *happy-path*, *happy+boundary*, *happy+boundary+property*.
+- Measures line coverage and a simplified branch coverage with `sys.settrace`.
+- Generates mutants with `ast` (comparison swaps, arithmetic swaps, and/or swaps, int-constant +1, `+=`->`-=`)
+  and computes mutation score (killed / total).
+- Writes `results.json` with per-function outcomes, a chart spec and a table.
+
+## Run
+```
+python demo.py
+python -m unittest test_demo.py
+```
+Stdlib only, deterministic, runs in a few seconds.
+
+## Honest caveats
+- Tiny sample; illustrative only.
+- No equivalent-mutant filtering, so the achievable score may be below 100%.
+- Branch coverage is a simplified line-transition approximation.
+- Property checks rely on a simple reference oracle, which real code often does not have.
+- Suites were not tuned after seeing results; whatever numbers appear are reported, including cases where
+  the hypothesis does not hold.
+- Tests in `test_demo.py` validate the harness (determinism, schema), not that the technique "wins".
+```
+=== END ===

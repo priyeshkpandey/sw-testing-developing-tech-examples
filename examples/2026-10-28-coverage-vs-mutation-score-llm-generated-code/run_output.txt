@@ -1,0 +1,13 @@
+$ python demo.py  (exit 1)
+--- stdout ---
+
+--- stderr ---
+Traceback (most recent call last):
+  File "/home/runner/work/sw-test-patreon-linkedin-poster/sw-test-patreon-linkedin-poster/work/demo/coverage-vs-mutation-score-llm-generated-code/demo.py", line 540, in <module>
+    main()
+  File "/home/runner/work/sw-test-patreon-linkedin-poster/sw-test-patreon-linkedin-poster/work/demo/coverage-vs-mutation-score-llm-generated-code/demo.py", line 442, in main
+    per[sname][fname] = evaluate(fname, src, ex, pr)
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/runner/work/sw-test-patreon-linkedin-poster/sw-test-patreon-linkedin-poster/work/demo/coverage-vs-mutation-score-llm-generated-code/demo.py", line 406, in evaluate
+    raise AssertionError(
+AssertionError: suite fails on original discount: mismatches=[((10.0, 9), 72.0, 81.0)] prop_ok=None
