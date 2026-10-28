@@ -1,0 +1,53 @@
+{
+  "status": "harness_failed",
+  "verdict": "I could not get a working experiment for this topic; the attempt log shows where it broke.",
+  "summary": {
+    "attempts": 3
+  },
+  "outcomes": [
+    {
+      "case": "attempt 1",
+      "verdict": "failed",
+      "evidence": "no '=== FILE: name ===' blocks found in model reply"
+    },
+    {
+      "case": "attempt 2",
+      "verdict": "failed",
+      "evidence": "no '=== FILE: name ===' blocks found in model reply"
+    },
+    {
+      "case": "attempt 3",
+      "verdict": "failed",
+      "evidence": "no '=== FILE: name ===' blocks found in model reply"
+    }
+  ],
+  "table": {
+    "columns": [
+      "attempt",
+      "error"
+    ],
+    "rows": [
+      [
+        1,
+        "no '=== FILE: name ===' blocks found in model reply"
+      ],
+      [
+        2,
+        "no '=== FILE: name ===' blocks found in model reply"
+      ],
+      [
+        3,
+        "no '=== FILE: name ===' blocks found in model reply"
+      ]
+    ]
+  },
+  "notes": [
+    "Topic: 100% Coverage, 40% Bug Detection: Why Line Coverage Misleads on LLM-Generated Code (and What Mutation Testing Shows)",
+    "No measured technique results exist for this run."
+  ],
+  "attempt_log": [
+    "no '=== FILE: name ===' blocks found in model reply",
+    "no '=== FILE: name ===' blocks found in model reply",
+    "no '=== FILE: name ===' blocks found in model reply"
+  ]
+}
