@@ -1,53 +1,168 @@
 {
-  "status": "harness_failed",
-  "verdict": "I could not get a working experiment for this topic; the attempt log shows where it broke.",
+  "verdict": "Line coverage was high for every suite yet detection varied (happy 0.40, branch 0.80, boundary+property 1.00); mutation score tracked fault detection far better than coverage did, but results are on a tiny hand-built corpus.",
   "summary": {
-    "attempts": 3
+    "bug_detection_rate_happy_path": 0.4,
+    "mutation_score_happy_path": 0.481,
+    "mean_line_coverage_happy_path": 0.866,
+    "mean_branch_coverage_happy_path": 0.795,
+    "bug_detection_rate_branch_driven": 0.8,
+    "mutation_score_branch_driven": 0.63,
+    "mean_line_coverage_branch_driven": 1.0,
+    "mean_branch_coverage_branch_driven": 1.0,
+    "bug_detection_rate_boundary_property": 1.0,
+    "mutation_score_boundary_property": 0.852,
+    "mean_line_coverage_boundary_property": 1.0,
+    "mean_branch_coverage_boundary_property": 1.0,
+    "functions": 11,
+    "detectable_bugs": 10,
+    "total_mutants": 27
   },
   "outcomes": [
     {
-      "case": "attempt 1",
+      "case": "happy_path suite: injected-bug detection",
       "verdict": "failed",
-      "evidence": "no '=== FILE: name ===' blocks found in model reply"
+      "evidence": "caught 4/10 detectable bugs (rate 0.40); mean line cov 0.87, branch cov 0.80; mutation score 0.48"
     },
     {
-      "case": "attempt 2",
-      "verdict": "failed",
-      "evidence": "no '=== FILE: name ===' blocks found in model reply"
+      "case": "branch_driven suite: injected-bug detection",
+      "verdict": "partial",
+      "evidence": "caught 8/10 detectable bugs (rate 0.80); mean line cov 1.00, branch cov 1.00; mutation score 0.63"
     },
     {
-      "case": "attempt 3",
+      "case": "boundary_property suite: injected-bug detection",
+      "verdict": "worked",
+      "evidence": "caught 10/10 detectable bugs (rate 1.00); mean line cov 1.00, branch cov 1.00; mutation score 0.85"
+    },
+    {
+      "case": "abs_diff equivalent mutant (> vs >=)",
       "verdict": "failed",
-      "evidence": "no '=== FILE: name ===' blocks found in model reply"
+      "evidence": "behaviourally equivalent change; no suite can or should catch it (all suites missed it). Excluded from detection rate but it shows mutation scores are noisy on equivalents."
     }
   ],
+  "chart": {
+    "title": "Coverage vs fault detection by suite",
+    "ylabel": "fraction (0-1)",
+    "labels": [
+      "happy_path",
+      "branch_driven",
+      "boundary_property"
+    ],
+    "series": {
+      "line coverage": [
+        0.866,
+        1.0,
+        1.0
+      ],
+      "branch coverage": [
+        0.795,
+        1.0,
+        1.0
+      ],
+      "mutation score": [
+        0.481,
+        0.63,
+        0.852
+      ],
+      "injected-bug detection": [
+        0.4,
+        0.8,
+        1.0
+      ]
+    }
+  },
   "table": {
     "columns": [
-      "attempt",
-      "error"
+      "function",
+      "bug class",
+      "happy_path",
+      "branch_driven",
+      "boundary_property"
     ],
     "rows": [
       [
-        1,
-        "no '=== FILE: name ===' blocks found in model reply"
+        "sum_first_n",
+        "off-by-one",
+        "caught",
+        "caught",
+        "caught"
       ],
       [
-        2,
-        "no '=== FILE: name ===' blocks found in model reply"
+        "safe_div",
+        "missing-edge-guard",
+        "MISSED",
+        "caught",
+        "caught"
       ],
       [
-        3,
-        "no '=== FILE: name ===' blocks found in model reply"
+        "is_adult",
+        "wrong-boundary-operator",
+        "MISSED",
+        "MISSED",
+        "caught"
+      ],
+      [
+        "sub_clamped",
+        "swapped-args",
+        "caught",
+        "caught",
+        "caught"
+      ],
+      [
+        "name_len",
+        "none-handling",
+        "MISSED",
+        "caught",
+        "caught"
+      ],
+      [
+        "max_of",
+        "missing-edge-guard",
+        "MISSED",
+        "caught",
+        "caught"
+      ],
+      [
+        "in_range",
+        "wrong-boundary-operator",
+        "MISSED",
+        "MISSED",
+        "caught"
+      ],
+      [
+        "last_k",
+        "off-by-one",
+        "caught",
+        "caught",
+        "caught"
+      ],
+      [
+        "discount",
+        "swapped-args",
+        "caught",
+        "caught",
+        "caught"
+      ],
+      [
+        "first_word",
+        "none-handling",
+        "MISSED",
+        "caught",
+        "caught"
+      ],
+      [
+        "abs_diff",
+        "none-detectable-by-any-test (equivalent)",
+        "MISSED",
+        "MISSED",
+        "MISSED"
       ]
     ]
   },
   "notes": [
-    "Topic: 100% Coverage, 40% Bug Detection: Why Line Coverage Misleads on LLM-Generated Code (and What Mutation Testing Shows)",
-    "No measured technique results exist for this run."
-  ],
-  "attempt_log": [
-    "no '=== FILE: name ===' blocks found in model reply",
-    "no '=== FILE: name ===' blocks found in model reply",
-    "no '=== FILE: name ===' blocks found in model reply"
+    "No real LLM is used: the 'LLM-style bugs' and the happy-path suites are hand-written to resemble typical outputs; this is a stub for illustration, not evidence about any model.",
+    "Corpus is 11 tiny functions (10 detectable bugs + 1 equivalent mutant); rates are coarse (steps of 0.1) and not statistically meaningful.",
+    "Suites were authored by hand with knowledge of the bug classes, which biases boundary suites towards success; the hypothesis numbers were not tuned to.",
+    "Mutation score is computed over mutants of the reference implementation (operators: comparison flip, + - * // swap, int constant +1); equivalent mutants are not filtered, which deflates scores.",
+    "Line/branch coverage are measured on the reference with sys.settrace / AST instrumentation and are simplified (no exception-edge or short-circuit branches)."
   ]
 }

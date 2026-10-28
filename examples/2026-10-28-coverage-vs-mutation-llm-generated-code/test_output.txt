@@ -1,0 +1,13 @@
+$ python -m unittest -v test_demo  (exit 0)
+
+test_compile_fn_accepts_source_and_ast (test_demo.TestHarness.test_compile_fn_accepts_source_and_ast) ... ok
+test_coverage_in_unit_range (test_demo.TestHarness.test_coverage_in_unit_range) ... ok
+test_deterministic (test_demo.TestHarness.test_deterministic) ... ok
+test_mutants_generated (test_demo.TestHarness.test_mutants_generated) ... ok
+test_reference_passes_all_suites (test_demo.TestHarness.test_reference_passes_all_suites) ... ok
+test_schema (test_demo.TestHarness.test_schema) ... ok
+
+----------------------------------------------------------------------
+Ran 6 tests in 0.120s
+
+OK
