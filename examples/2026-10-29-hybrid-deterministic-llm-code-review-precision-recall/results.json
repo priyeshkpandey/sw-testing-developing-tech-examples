@@ -1,0 +1,129 @@
+{
+  "verdict": "Hypothesis only partly held in this simulation (see outcomes); the hybrid's recall is capped by rule candidates and its gains depend on the stub's fixed error rates.",
+  "summary": {
+    "snippets": 200,
+    "defects": 84,
+    "rules_precision": 0.6574,
+    "rules_recall": 0.8452,
+    "rules_f1": 0.7396,
+    "rules_fp": 37,
+    "rules_llm_calls": 0,
+    "llm_precision": 0.8021,
+    "llm_recall": 0.9167,
+    "llm_f1": 0.8556,
+    "llm_fp": 19,
+    "llm_llm_calls": 200,
+    "hybrid_precision": 0.8421,
+    "hybrid_recall": 0.7619,
+    "hybrid_f1": 0.8,
+    "hybrid_fp": 12,
+    "hybrid_llm_calls": 108,
+    "call_reduction_x": 1.85
+  },
+  "outcomes": [
+    {
+      "case": "Hybrid precision > LLM-only precision",
+      "verdict": "worked",
+      "evidence": "hybrid 0.842 vs llm_only 0.802"
+    },
+    {
+      "case": "Hybrid recall > rules-only recall",
+      "verdict": "failed",
+      "evidence": "hybrid 0.762 vs rules 0.845 (LLM confirm step can DROP true candidates)"
+    },
+    {
+      "case": "Hybrid has best F1 of three",
+      "verdict": "failed",
+      "evidence": "F1 rules 0.740, llm_only 0.856, hybrid 0.800; best=llm_only"
+    },
+    {
+      "case": "Hybrid uses >=5x fewer LLM calls than LLM-only",
+      "verdict": "failed",
+      "evidence": "llm_only 200 calls vs hybrid 108 calls (1.85x)"
+    },
+    {
+      "case": "Shared-state-without-lock defects (no rule exists)",
+      "verdict": "failed",
+      "evidence": "rules caught 0/13, hybrid caught 0/13: hybrid cannot see what rules never nominate"
+    },
+    {
+      "case": "Hybrid recall vs LLM-only recall",
+      "verdict": "failed",
+      "evidence": "hybrid 0.762 vs llm_only 0.917; recall is capped by rule candidate recall 0.845"
+    }
+  ],
+  "chart": {
+    "title": "Precision / Recall / F1 by reviewer (simulated LLM)",
+    "ylabel": "score (0-1)",
+    "labels": [
+      "rules-only",
+      "LLM-only (stub)",
+      "hybrid"
+    ],
+    "series": {
+      "precision": [
+        0.6574,
+        0.8021,
+        0.8421
+      ],
+      "recall": [
+        0.8452,
+        0.9167,
+        0.7619
+      ],
+      "f1": [
+        0.7396,
+        0.8556,
+        0.8
+      ]
+    }
+  },
+  "table": {
+    "columns": [
+      "reviewer",
+      "precision",
+      "recall",
+      "f1",
+      "false_positives",
+      "false_negatives",
+      "llm_calls"
+    ],
+    "rows": [
+      [
+        "rules-only",
+        0.6574,
+        0.8452,
+        0.7396,
+        37,
+        13,
+        0
+      ],
+      [
+        "LLM-only (stub)",
+        0.8021,
+        0.9167,
+        0.8556,
+        19,
+        7,
+        200
+      ],
+      [
+        "hybrid",
+        0.8421,
+        0.7619,
+        0.8,
+        12,
+        20,
+        108
+      ]
+    ]
+  },
+  "notes": [
+    "The LLM is a deterministic seeded STUB with fixed rates; results show architecture trade-offs, not any real model's quality.",
+    "Error rates and corpus mix were fixed up front and not tuned; different rates can flip the conclusions.",
+    "The synthetic corpus is tiny and templated; real code is far messier and rule false-positive rates differ.",
+    "Mock LLM outcomes are independent per snippet; real LLMs correlate errors with code style and context.",
+    "Hybrid recall cannot exceed rule candidate recall: defect classes without a rule (e.g. missing locks) are never triaged.",
+    "LLM calls are a crude cost proxy (1 per reviewed snippet); real cost scales with tokens, not calls."
+  ]
+}

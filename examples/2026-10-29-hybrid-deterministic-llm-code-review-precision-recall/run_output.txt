@@ -1,0 +1,25 @@
+$ python demo.py  (exit 0)
+--- stdout ---
+{
+  "snippets": 200,
+  "defects": 84,
+  "rules_precision": 0.6574,
+  "rules_recall": 0.8452,
+  "rules_f1": 0.7396,
+  "rules_fp": 37,
+  "rules_llm_calls": 0,
+  "llm_precision": 0.8021,
+  "llm_recall": 0.9167,
+  "llm_f1": 0.8556,
+  "llm_fp": 19,
+  "llm_llm_calls": 200,
+  "hybrid_precision": 0.8421,
+  "hybrid_recall": 0.7619,
+  "hybrid_f1": 0.8,
+  "hybrid_fp": 12,
+  "hybrid_llm_calls": 108,
+  "call_reduction_x": 1.85
+}
+Hypothesis only partly held in this simulation (see outcomes); the hybrid's recall is capped by rule candidates and its gains depend on the stub's fixed error rates.
+
+--- stderr ---
