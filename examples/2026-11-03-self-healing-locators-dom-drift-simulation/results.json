@@ -1,0 +1,155 @@
+{
+  "verdict": "Fingerprint healing recovered 24% of cases that broke brittle selectors (brittle failure 32%), but healed onto the wrong element in 24.6% of all cases (28.8% on near-duplicate pages), so healing needs a confidence threshold plus an assertion rather than blind trust.",
+  "summary": {
+    "cases": 500,
+    "brittle_failure_rate": 0.324,
+    "brittle_silent_wrong_rate": 0.23,
+    "healing_success_rate_overall": 0.754,
+    "recovery_rate_on_broken": 0.2407,
+    "false_heal_rate_overall": 0.246,
+    "false_heal_share_of_heal_attempts": 0.1702,
+    "healer_gave_up_rate": 0.0,
+    "false_heal_rate_near_dup_pages": 0.2885,
+    "false_heal_rate_unique_pages": 0.0549
+  },
+  "outcomes": [
+    {
+      "case": "drift=id_renamed",
+      "verdict": "partial",
+      "evidence": "brittle fail 42.4%, heal success 87.9%, false-heal 12.1% (n=66)"
+    },
+    {
+      "case": "drift=class_renamed",
+      "verdict": "worked",
+      "evidence": "brittle fail 18.8%, heal success 100.0%, false-heal 0.0% (n=85)"
+    },
+    {
+      "case": "drift=wrapper_inserted",
+      "verdict": "partial",
+      "evidence": "brittle fail 45.7%, heal success 54.3%, false-heal 45.7% (n=127)"
+    },
+    {
+      "case": "drift=tag_changed",
+      "verdict": "worked",
+      "evidence": "brittle fail 4.7%, heal success 100.0%, false-heal 0.0% (n=64)"
+    },
+    {
+      "case": "drift=text_reworded",
+      "verdict": "worked",
+      "evidence": "brittle fail 0.0%, heal success 100.0%, false-heal 0.0% (n=66)"
+    },
+    {
+      "case": "drift=reordered",
+      "verdict": "failed",
+      "evidence": "brittle fail 62.0%, heal success 38.0%, false-heal 62.0% (n=92)"
+    },
+    {
+      "case": "near-duplicate pages (cart/table/nav/settings)",
+      "verdict": "failed",
+      "evidence": "false-heal 28.8% (n=409) vs 5.5% on unique-element page (n=91)"
+    },
+    {
+      "case": "brittle selector silently hits wrong element",
+      "verdict": "partial",
+      "evidence": "brittle returned a wrong element in 23.0% of cases"
+    }
+  ],
+  "chart": {
+    "title": "Failure / healing / false-heal rate by drift type",
+    "ylabel": "percent of cases",
+    "labels": [
+      "id_renamed",
+      "class_renamed",
+      "wrapper_inserted",
+      "tag_changed",
+      "text_reworded",
+      "reordered"
+    ],
+    "series": {
+      "brittle failure %": [
+        42.4,
+        18.8,
+        45.7,
+        4.7,
+        0.0,
+        62.0
+      ],
+      "heal success %": [
+        87.9,
+        100.0,
+        54.3,
+        100.0,
+        100.0,
+        38.0
+      ],
+      "false-heal %": [
+        12.1,
+        0.0,
+        45.7,
+        0.0,
+        0.0,
+        62.0
+      ]
+    }
+  },
+  "table": {
+    "columns": [
+      "drift",
+      "cases",
+      "brittle fail %",
+      "heal success %",
+      "false-heal %"
+    ],
+    "rows": [
+      [
+        "id_renamed",
+        66,
+        42.4,
+        87.9,
+        12.1
+      ],
+      [
+        "class_renamed",
+        85,
+        18.8,
+        100.0,
+        0.0
+      ],
+      [
+        "wrapper_inserted",
+        127,
+        45.7,
+        54.3,
+        45.7
+      ],
+      [
+        "tag_changed",
+        64,
+        4.7,
+        100.0,
+        0.0
+      ],
+      [
+        "text_reworded",
+        66,
+        0.0,
+        100.0,
+        0.0
+      ],
+      [
+        "reordered",
+        92,
+        62.0,
+        38.0,
+        62.0
+      ]
+    ]
+  },
+  "notes": [
+    "The 'AI healer' is a deterministic weighted-similarity scorer (tag .25, text .25, attrs .30, path .20); no LLM is used.",
+    "Corpus is 5 tiny hand-written pages; real DOMs are larger, noisier, and dynamic (JS, shadow DOM, async).",
+    "Mutations are applied one at a time; compound drift (several changes at once) would hurt healing more.",
+    "Heal threshold 0.55 was fixed before running and not tuned; a different threshold trades success for false-heals.",
+    "Ground truth is the element's pre-mutation uid, so 'false heal' means healing onto a different element than the one recorded."
+  ]
+}

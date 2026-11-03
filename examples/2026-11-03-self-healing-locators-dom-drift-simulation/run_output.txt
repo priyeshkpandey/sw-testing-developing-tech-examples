@@ -1,0 +1,15 @@
+$ python demo.py  (exit 0)
+--- stdout ---
+Fingerprint healing recovered 24% of cases that broke brittle selectors (brittle failure 32%), but healed onto the wrong element in 24.6% of all cases (28.8% on near-duplicate pages), so healing needs a confidence threshold plus an assertion rather than blind trust.
+  cases: 500
+  brittle_failure_rate: 0.324
+  brittle_silent_wrong_rate: 0.23
+  healing_success_rate_overall: 0.754
+  recovery_rate_on_broken: 0.2407
+  false_heal_rate_overall: 0.246
+  false_heal_share_of_heal_attempts: 0.1702
+  healer_gave_up_rate: 0.0
+  false_heal_rate_near_dup_pages: 0.2885
+  false_heal_rate_unique_pages: 0.0549
+
+--- stderr ---
