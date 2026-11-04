@@ -1,0 +1,14 @@
+$ python -m unittest -v test_demo  (exit 0)
+
+test_adaptive_cost_bounds (test_demo.HarnessTests.test_adaptive_cost_bounds) ... ok
+test_cases_well_formed (test_demo.HarnessTests.test_cases_well_formed) ... ok
+test_deterministic (test_demo.HarnessTests.test_deterministic) ... ok
+test_fixed_vote_costs_n_calls (test_demo.HarnessTests.test_fixed_vote_costs_n_calls) ... ok
+test_metrics_in_range (test_demo.HarnessTests.test_metrics_in_range) ... ok
+test_schema (test_demo.HarnessTests.test_schema) ... ok
+test_single_shot_costs_one_call (test_demo.HarnessTests.test_single_shot_costs_one_call) ... ok
+
+----------------------------------------------------------------------
+Ran 7 tests in 1.105s
+
+OK

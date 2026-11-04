@@ -1,0 +1,137 @@
+{
+  "verdict": "Voting sharply reduces flakiness (N=5 flip-rate cut 34%) but cannot fix bias-driven errors; adaptive re-sampling did not meet the 90%-stability-at-<60%-cost target in this simulation.",
+  "summary": {
+    "flip_cut_vote5_pct": 33.5,
+    "flip_cut_adaptive_pct": 33.25,
+    "adaptive_stability_ratio": 0.993,
+    "adaptive_call_ratio": 0.781,
+    "accuracy_single": 0.7423,
+    "accuracy_vote5": 0.7972,
+    "biased_tier_acc_vote5": 0.1548
+  },
+  "outcomes": [
+    {
+      "case": "N=5 vote cuts flip rate by >70%",
+      "verdict": "failed",
+      "evidence": "flip rate 1.000 -> 0.665 (cut 33.5%)"
+    },
+    {
+      "case": "N=5 vote raises accuracy on borderline cases",
+      "verdict": "worked",
+      "evidence": "borderline acc 0.654 -> 0.763"
+    },
+    {
+      "case": "Adaptive keeps >=90% of vote-5 stability gain at <60% of its calls",
+      "verdict": "partial",
+      "evidence": "stability ratio 0.99, call ratio 0.78 (3.91 vs 5.00 calls/case)"
+    },
+    {
+      "case": "Voting fixes systematically biased cases",
+      "verdict": "failed",
+      "evidence": "biased-tier acc 0.301 -> 0.155 (change -0.147); voting amplifies a wrong majority"
+    },
+    {
+      "case": "Accuracy plateaus beyond N=5",
+      "verdict": "failed",
+      "evidence": "overall acc N=5 0.797 vs N=9 0.823 (gain +0.025)"
+    }
+  ],
+  "chart": {
+    "title": "Flip rate vs judge calls per case",
+    "ylabel": "case flip rate across reruns",
+    "labels": [
+      "single N=1",
+      "vote N=3",
+      "vote N=5",
+      "vote N=9",
+      "adaptive max5"
+    ],
+    "series": {
+      "flip_rate": [
+        1.0,
+        0.92,
+        0.665,
+        0.5725,
+        0.6675
+      ],
+      "accuracy": [
+        0.7423,
+        0.7805,
+        0.7972,
+        0.8226,
+        0.7999
+      ]
+    }
+  },
+  "table": {
+    "columns": [
+      "strategy",
+      "flip_rate",
+      "accuracy",
+      "calls_per_case",
+      "acc_easy",
+      "acc_borderline",
+      "acc_hard",
+      "acc_biased"
+    ],
+    "rows": [
+      [
+        "single N=1",
+        1.0,
+        0.7423,
+        1.0,
+        0.949,
+        0.654,
+        0.553,
+        0.301
+      ],
+      [
+        "vote N=3",
+        0.92,
+        0.7805,
+        3.0,
+        0.993,
+        0.717,
+        0.574,
+        0.215
+      ],
+      [
+        "vote N=5",
+        0.665,
+        0.7972,
+        5.0,
+        0.999,
+        0.763,
+        0.59,
+        0.155
+      ],
+      [
+        "vote N=9",
+        0.5725,
+        0.8226,
+        9.0,
+        1.0,
+        0.83,
+        0.625,
+        0.1
+      ],
+      [
+        "adaptive max5",
+        0.6675,
+        0.7999,
+        3.91,
+        0.999,
+        0.764,
+        0.601,
+        0.167
+      ]
+    ]
+  },
+  "notes": [
+    "The judge is a seeded deterministic STUB, not a real LLM; probabilities are assumptions.",
+    "Judge calls are assumed independent; real samples at temperature>0 share prompt-level bias and correlate, so real gains are likely smaller.",
+    "Tier mix and p_correct values are fixed up front and not tuned; conclusions depend on them.",
+    "Flip rate counts a case as flaky if any of 200 reruns disagrees, so it is sensitive to rerun count.",
+    "Adaptive escalates only when the first 3 votes disagree; confident-but-wrong verdicts are never re-checked."
+  ]
+}
