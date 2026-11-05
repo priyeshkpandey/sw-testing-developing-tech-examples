@@ -1,0 +1,29 @@
+$ python -m unittest -v test_demo  (exit 0)
+{
+  "suite_size": 70,
+  "mutants_total": 15,
+  "mutants_killed_full_suite": 10,
+  "coverage_greedy_size": 12,
+  "coverage_greedy_reduction_pct": 82.86,
+  "coverage_greedy_kill_loss_pp": 30.0,
+  "mutation_greedy_size": 13,
+  "mutation_greedy_reduction_pct": 81.43,
+  "mutation_greedy_kill_loss_pp": 0.0,
+  "exact_dedup_reduction_pct": 31.43
+}
+hypothesis size band 60-80%: NOT met (coverage_greedy 82.9%); >=10pp mutant loss: met (30.0 pp); mutation_greedy 100% retention: met
+
+test_coverage_greedy_preserves_coverage_by_construction (test_demo.HarnessTests.test_coverage_greedy_preserves_coverage_by_construction) ... ok
+test_every_mutation_applies (test_demo.HarnessTests.test_every_mutation_applies) ... ok
+test_full_suite_is_redundant (test_demo.HarnessTests.test_full_suite_is_redundant) ... ok
+test_generator_is_deterministic (test_demo.HarnessTests.test_generator_is_deterministic) ... ok
+test_mutation_greedy_preserves_kills_by_construction (test_demo.HarnessTests.test_mutation_greedy_preserves_kills_by_construction) ... ok
+test_no_reduction_is_identity_and_never_beaten (test_demo.HarnessTests.test_no_reduction_is_identity_and_never_beaten) ... ok
+test_results_json_schema (test_demo.HarnessTests.test_results_json_schema) ... ok
+test_strategies_deterministic_and_subsets (test_demo.HarnessTests.test_strategies_deterministic_and_subsets) ... ok
+test_suite_passes_on_original_code (test_demo.HarnessTests.test_suite_passes_on_original_code) ... ok
+
+----------------------------------------------------------------------
+Ran 9 tests in 0.611s
+
+OK

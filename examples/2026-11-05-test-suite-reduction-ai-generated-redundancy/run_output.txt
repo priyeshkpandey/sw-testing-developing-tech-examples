@@ -1,0 +1,17 @@
+$ python demo.py  (exit 0)
+--- stdout ---
+{
+  "suite_size": 70,
+  "mutants_total": 15,
+  "mutants_killed_full_suite": 10,
+  "coverage_greedy_size": 12,
+  "coverage_greedy_reduction_pct": 82.86,
+  "coverage_greedy_kill_loss_pp": 30.0,
+  "mutation_greedy_size": 13,
+  "mutation_greedy_reduction_pct": 81.43,
+  "mutation_greedy_kill_loss_pp": 0.0,
+  "exact_dedup_reduction_pct": 31.43
+}
+hypothesis size band 60-80%: NOT met (coverage_greedy 82.9%); >=10pp mutant loss: met (30.0 pp); mutation_greedy 100% retention: met
+
+--- stderr ---

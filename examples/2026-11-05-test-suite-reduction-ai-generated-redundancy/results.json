@@ -1,0 +1,135 @@
+{
+  "verdict": "Coverage-preserving reduction shrank the generated suite by 83% while keeping all lines/branches but lost 30.0 pp of killed mutants; mutation-preserving reduction kept every killed mutant at 13 vs 12 tests, but this is a small single-seed simulated suite where the full suite itself misses 5 mutants.",
+  "summary": {
+    "suite_size": 70,
+    "mutants_total": 15,
+    "mutants_killed_full_suite": 10,
+    "coverage_greedy_size": 12,
+    "coverage_greedy_reduction_pct": 82.86,
+    "coverage_greedy_kill_loss_pp": 30.0,
+    "mutation_greedy_size": 13,
+    "mutation_greedy_reduction_pct": 81.43,
+    "mutation_greedy_kill_loss_pp": 0.0,
+    "exact_dedup_reduction_pct": 31.43
+  },
+  "outcomes": [
+    {
+      "case": "coverage_greedy keeps full line+branch coverage",
+      "verdict": "worked",
+      "evidence": "line 100.0%, branch 100.0% retained at 12/70 tests (82.9% smaller)"
+    },
+    {
+      "case": "coverage_greedy preserves mutants killed",
+      "verdict": "failed",
+      "evidence": "lost 30.0 pp of killed mutants (3 of 10); lost: discount: qty>=10 -> >10; grade: >=80 -> >80; grade: >=90 -> >90"
+    },
+    {
+      "case": "mutation_greedy preserves all killed mutants",
+      "verdict": "worked",
+      "evidence": "10/10 killed mutants retained with 13 tests (81.4% smaller)"
+    },
+    {
+      "case": "exact_dedup reduction power on paraphrased tests",
+      "verdict": "partial",
+      "evidence": "only 31.4% smaller (48 tests); kill retention 100.0%"
+    },
+    {
+      "case": "mutants no suite subset can kill (generator gaps / equivalent)",
+      "verdict": "failed",
+      "evidence": "5 of 15 mutants survive even the full suite: clamp: < -> <= (lo); clamp: > -> >= (hi); grade: >=70 -> >70; discount: >1000 -> >=1000; clamp: return x -> x+0 (EQUIVALENT)"
+    }
+  ],
+  "chart": {
+    "title": "Reduction strategies: size vs retained detection",
+    "ylabel": "value",
+    "labels": [
+      "no_reduction",
+      "exact_dedup",
+      "coverage_greedy",
+      "mutation_greedy"
+    ],
+    "series": {
+      "suite size (tests)": [
+        70,
+        48,
+        12,
+        13
+      ],
+      "branch coverage retained (%)": [
+        100.0,
+        100.0,
+        100.0,
+        100.0
+      ],
+      "killed mutants retained (%)": [
+        100.0,
+        100.0,
+        70.0,
+        100.0
+      ]
+    }
+  },
+  "table": {
+    "columns": [
+      "strategy",
+      "tests",
+      "size reduction %",
+      "line cov retained %",
+      "branch cov retained %",
+      "mutants killed",
+      "kill retained %",
+      "mutation score %"
+    ],
+    "rows": [
+      [
+        "no_reduction",
+        70,
+        0.0,
+        100.0,
+        100.0,
+        10,
+        100.0,
+        66.67
+      ],
+      [
+        "exact_dedup",
+        48,
+        31.43,
+        100.0,
+        100.0,
+        10,
+        100.0,
+        66.67
+      ],
+      [
+        "coverage_greedy",
+        12,
+        82.86,
+        100.0,
+        100.0,
+        7,
+        70.0,
+        46.67
+      ],
+      [
+        "mutation_greedy",
+        13,
+        81.43,
+        100.0,
+        100.0,
+        10,
+        100.0,
+        66.67
+      ]
+    ]
+  },
+  "notes": [
+    "Generator is a deterministic STUB imitating LLM redundancy; no real model was used.",
+    "Redundancy structure (many typical values, few boundary tests) is my own design choice and drives the outcome; real suites may differ greatly.",
+    "Single seed, 4 tiny functions, 15 mutants incl. 1 deliberate equivalent mutant: percentages are coarse and not statistically meaningful.",
+    "Mutation score here = killed / all mutants, so equivalent/unkilled mutants cap it.",
+    "Greedy set cover is a heuristic; it is not guaranteed to be minimal.",
+    "mutation_greedy also adds tests to keep full line/branch coverage, so it is not a pure mutation-only reduction.",
+    "hypothesis size band 60-80%: NOT met (coverage_greedy 82.9%); >=10pp mutant loss: met (30.0 pp); mutation_greedy 100% retention: met"
+  ]
+}
